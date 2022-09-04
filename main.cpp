@@ -10,18 +10,58 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace
 {
     typedef struct
     {   std::string v1;
         std::set<std::string> v2, v3;
-        std::string translate;
+        std::string trn;
     } vinfo_t;
 
     vinfo_t get_vinfo(size_t fline, const std::string &);
 
-    std::set<std::string> get_words_set(const std::string &, char delim);
+    /* Checks the answer. Result consist of two numbers:
+     * - first: number of matched answers
+     * - second: number of reference answers */
+
+    std::pair<size_t, size_t> check_answer
+        (   const vinfo_t &
+        ,   const std::string & v2ans
+        ,   const std::string & v3and
+        );
+
+    /* Splits string to set of string using chosen delimiter */
+
+    struct replace_info {
+        std::string p1, s1, p2;
+        std::set<std::string> s2;
+
+        replace_info() {}
+
+        replace_info
+        (   const std::string & _p1
+        ,   const std::string & _s1
+        )
+        :   p1(_p1)
+        ,   s1(_s1)
+        {}
+
+        replace_info
+        (   const std::string & _p1
+        ,   const std::string & _s1
+        ,   const std::string & _p2
+        ,   const std::set<std::string> & _s2
+        )
+        :   p1(_p1)
+        ,   s1(_s1)
+        ,   p2(_p2)
+        ,   s2(_s2)
+        {}
+    };
+
+    std::set<std::string> split2set(const std::string &, char delim, const replace_info & = replace_info());
 
 } // namespace
 
@@ -31,6 +71,8 @@ int main(int argc, char ** argv)
     {
         if (argc != 2)
             throw std::invalid_argument("Expected single argument (database)");
+
+        // TODO auto db = load(argv[1]);
 
         std::fstream file(argv[1]);
         if (!file.is_open())
@@ -47,21 +89,25 @@ int main(int argc, char ** argv)
 
         // main loop
 
-        //std::cout << "ok" << std::endl;
-
         std::random_device rdev;
-        std::uniform_int_distribution<size_t> rdis(0, varr.size()-1);
+        std::mt19937 rengine(rdev());
+        //std::uniform_int_distribution<size_t> rdis(0, varr.size()-1);
+
+        size_t total = 0, success = 0, tests = 0;
 
         while (true)
         {
+            if (!(tests % varr.size()))
+                std::shuffle(varr.begin(), varr.end(), rengine);
+
             using std::cout;
             using std::cin;
             using std::endl;
 
-            // TODO const vinfo_t = varr[index]
+            //const vinfo_t vinfo = varr[rdis(rdev)];
+            const vinfo_t vinfo = varr.front();
 
-            const size_t index = rdis(rdev);
-            cout << "v1: " << varr[index].v1 << endl;
+            cout << "v1: " << vinfo.v1 << endl;
             cout << "v2: ";
 
             std::string v2;
@@ -71,26 +117,38 @@ int main(int argc, char ** argv)
             std::string v3;
             std::getline(cin, v3);
 
-            const std::set<std::string> v2s = get_words_set(v2, ' ');
-            const std::set<std::string> v3s = get_words_set(v3, ' ');
+            auto [ csuccess, ctotal ] = check_answer(vinfo, v2, v3);
 
-            // TODO accept "1" and "2" solutions
-            // calculate statistics
-
-            if ((v2s == varr[index].v2) && (v3s == varr[index].v3))
+            if (csuccess == ctotal)
                 cout << "success" << endl;
             else
             {
-                cout << "failed: v2 = [";
-                for (auto & v2: varr[index].v2)
+                cout << "failed ("
+                    << csuccess << "/" << ctotal
+                    << "): v2 = [";
+                for (auto & v2: vinfo.v2)
                     cout << " " << v2;
                 cout << " ]; v3 = [";
-                for (auto & v3: varr[index].v3)
+                for (auto & v3: vinfo.v3)
                     cout << " " << v3;
                 cout << " ]" << endl;
             }
 
             cout << endl;
+
+            // update statistics
+
+            total += ctotal;
+            success += csuccess;
+
+            if ((++tests % 10) == 0)
+            {
+                cout << "Number of tests = " << tests << "; rate = " << 100. * success / total << "%" << endl;
+                cout << endl;
+            }
+
+            varr.push_back(varr.front());
+            varr.pop_front();
         }
     }
     catch (const std::exception & ex)
@@ -173,7 +231,10 @@ namespace
                 }
             }
 
-            /*
+            // translation
+
+            // vinfo.trn = ss.str(); // TODO load translation
+
             using namespace std;
             cout << "v1 = " << vinfo.v1 << "; v2 = [";
             for (auto & v2: vinfo.v2)
@@ -182,7 +243,7 @@ namespace
             for (auto & v3: vinfo.v3)
                 cout << " " << v3;
             cout << " ]" << endl;
-            */
+            cout << "trn = " << vinfo.trn << endl;
 
             return vinfo;
         }
@@ -197,15 +258,50 @@ namespace
         }
     }
 
-    // TODO list of replaces? [1] [2] >>> sets, or word + set
+    std::pair<size_t, size_t> check_answer
+        (   const vinfo_t & vinfo
+        ,   const std::string & v2ans
+        ,   const std::string & v3ans
+        )
+    {
+        std::pair<size_t, size_t> result(0, vinfo.v2.size() + vinfo.v3.size());
 
-    std::set<std::string> get_words_set(const std::string & line, char delim)
+        const auto v2 = split2set(v2ans, ' ', replace_info("1", vinfo.v1));
+        const auto v3 = split2set(v3ans, ' ', replace_info("1", vinfo.v1, "2", v2));
+
+        if (v2.size() <= vinfo.v2.size())
+            for (auto & answer: v2)
+                if (vinfo.v2.count(answer))
+                    ++result.first;
+
+        if (v3.size() <= vinfo.v3.size())
+            for (auto & answer: v3)
+                if (vinfo.v3.count(answer))
+                    ++result.first;
+
+        return result;
+    }
+
+    std::set<std::string> split2set
+        (   const std::string & str
+        ,   char delim
+        ,   const replace_info & rinfo
+        )
     {
         std::set<std::string> result;
 
-        std::istringstream ss(line);
-        for (std::string vv; std::getline(ss, vv, delim); )
-            result.insert(vv);
+        std::istringstream ss(str);
+        for (std::string word; std::getline(ss, word, delim); ) {
+            if (word == rinfo.p1)
+                result.insert(rinfo.s1);
+            else
+            if (word != rinfo.p2)
+                result.insert(word);
+            else {
+                for (auto & ww: rinfo.s2)
+                    result.insert(ww);
+            }
+        }
 
         return result;
     }
