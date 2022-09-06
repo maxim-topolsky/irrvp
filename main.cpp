@@ -5,6 +5,7 @@
 #include <deque>
 #include <iostream>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <set>
 #include <sstream>
@@ -20,6 +21,8 @@ namespace
         std::string trn;
     } vinfo_t;
 
+    // TODO db_t load(..)
+    
     vinfo_t get_vinfo(size_t fline, const std::string &);
 
     /* Checks the answer. Result consist of two numbers:
@@ -65,6 +68,8 @@ namespace
 
 } // namespace
 
+// TODO catch Ctrl+C, dump statistics
+
 int main(int argc, char ** argv)
 {
     try
@@ -91,22 +96,25 @@ int main(int argc, char ** argv)
 
         std::random_device rdev;
         std::mt19937 rengine(rdev());
-        //std::uniform_int_distribution<size_t> rdis(0, varr.size()-1);
+        std::uniform_int_distribution<size_t> rdis(0, varr.size()-1);
 
-        size_t total = 0, success = 0, tests = 0;
+        std::shuffle(varr.begin(), varr.end(), rengine);
 
-        while (true)
+        size_t vtotal = 0, vsuccess = 0, ttotal = 0, tsuccess = 0; // verbs/translation total/success
+
+        // TODO save fauilts, show them at the end
+
+        for (size_t i = 0, ilim = varr.size(); i < ilim; ++i)
         {
-            if (!(tests % varr.size()))
-                std::shuffle(varr.begin(), varr.end(), rengine);
-
             using std::cout;
             using std::cin;
             using std::endl;
 
             //const vinfo_t vinfo = varr[rdis(rdev)];
-            const vinfo_t vinfo = varr.front();
+            const vinfo_t vinfo = varr[i];
 
+            cout << "Test " << (i + 1) << "/" << ilim << endl;
+            cout << endl;
             cout << "v1: " << vinfo.v1 << endl;
             cout << "v2: ";
 
@@ -123,6 +131,7 @@ int main(int argc, char ** argv)
                 cout << "success" << endl;
             else
             {
+                // TODO divide failed from partial faile [ wrong / partial wrong ]
                 cout << "failed ("
                     << csuccess << "/" << ctotal
                     << "): v2 = [";
@@ -134,22 +143,62 @@ int main(int argc, char ** argv)
                 cout << " ]" << endl;
             }
 
+            vtotal += ctotal;
+            vsuccess += csuccess;
+
+            // translation
+
+            std::set<std::string> trn = { vinfo.trn };
+            while (trn.size() != 5)
+                trn.insert(varr[rdis(rdev)].trn);
+
+            cout << endl;
+            
+            size_t j = 1;
+            for (auto & aux: trn)
+                cout << j++ << ". " << aux << endl;
+
+            std::optional<size_t> index;
+
+            while (!index)
+            {
+                cout << "Choose right translation: ";
+                std::string aux;
+                getline(cin, aux);
+                if (std::all_of(aux.begin(), aux.end(), [](auto symbol) { return isdigit(symbol) != 0; })) {
+                    index = atol(aux.c_str());
+                    if (!*index || (*index > trn.size()))
+                        index.reset();
+                }
+            }
+
+            auto it = trn.begin();
+            advance(it, *index - 1);
+
+            if (*it != vinfo.trn)
+                cout << "failed (" << vinfo.trn << ")" << endl;
+            else
+            {
+                cout << "success" << endl;
+                ++tsuccess;
+            }
+
+            ++ttotal;
+
             cout << endl;
 
             // update statistics
 
-            total += ctotal;
-            success += csuccess;
-
-            if ((++tests % 10) == 0)
+            if (((i + 1) % 10) == 0)
             {
-                cout << "Number of tests = " << tests << "; rate = " << 100. * success / total << "%" << endl;
+                cout << "Number of tests = " << (i+1) << "; v-rate = "
+                    << 100. * vsuccess / vtotal << "%; t-rate ="
+                    << 100. * tsuccess / ttotal << "%"
+                    << endl;
                 cout << endl;
             }
-
-            varr.push_back(varr.front());
-            varr.pop_front();
         }
+
     }
     catch (const std::exception & ex)
     {
@@ -233,8 +282,18 @@ namespace
 
             // translation
 
-            // vinfo.trn = ss.str(); // TODO load translation
+            std::string trn;
+            while (!ss.eof())
+            {
+                ss >> trn;
 
+                if (!vinfo.trn.empty())
+                    vinfo.trn += ' ';
+
+                vinfo.trn += trn;
+            }
+
+            /*
             using namespace std;
             cout << "v1 = " << vinfo.v1 << "; v2 = [";
             for (auto & v2: vinfo.v2)
@@ -244,6 +303,7 @@ namespace
                 cout << " " << v3;
             cout << " ]" << endl;
             cout << "trn = " << vinfo.trn << endl;
+            */
 
             return vinfo;
         }
