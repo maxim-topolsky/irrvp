@@ -1,7 +1,7 @@
 abide           abode [2]               выполнять, терпеть
 arise           arose arisen            возникать
 awake           awoke awoken            бодрствовать
-bear            bore borne/born         нести
+bear            bore borne/born         нести, терпеть
 beat            [1] beaten              побеждать
 become          became become           возникать, становиться
 beget           begat/begot begotten    порождать
@@ -91,7 +91,7 @@ overcome        overcame [1]            охватывать
 partake         partook partaken        принимать участие
 pay             paid [2]                платить
 plead           pleaded/pled [2]        выcтупать в суде, умолять
-preset          [1] [1]                 предустанавливать 
+preset          [1] [1]                 предустанавливать
 prove           proved proven/[2]       подтверждать, доказывать
 put             [1] [1]                 класть
 quit            [1] [1]                 бросать, прекращать, увольняться
@@ -116,6 +116,7 @@ shine           shone [2]               сиять, светить
 shoe            shod [2]                обувать
 shoot           shot [2]                стрелять
 show            showed shown            показывать
+shrink          shrank shrunk           сокращаться, сжиматься
 shut            [1] [1]                 закрывать
 sing            sang sung               петь
 sink            sank/sunk sunk/sunken   опускаться, тонуть
