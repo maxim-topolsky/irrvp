@@ -1,10 +1,15 @@
 // irrvp (irregular verbs practive) by maxim.topolsky@gmail.com
 
+#include <signal.h> // TODO linux only
+
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <deque>
 #include <iostream>
 #include <fstream>
+#include <map>
+#include <numeric>
 #include <optional>
 #include <random>
 #include <set>
@@ -22,7 +27,7 @@ namespace
     } vinfo_t;
 
     // TODO db_t load(..)
-    
+
     vinfo_t get_vinfo(size_t fline, const std::string &);
 
     /* Checks the answer. Result consist of two numbers:
@@ -66,9 +71,87 @@ namespace
 
     std::set<std::string> split2set(const std::string &, char delim, const replace_info & = replace_info());
 
-} // namespace
+    /* Statistics hold structure, print functions */
 
-// TODO catch Ctrl+C, dump statistics
+    struct stat_t
+    {   size_t      done;                   // number of passed tests
+        size_t      vsuccess, vtotal;       // verbs (success, total)
+        size_t      tsuccess, ttotal;       // translations (success, total)
+        std::set<size_t> ft;                // failed tests (VBD index)
+
+        stat_t()
+        :   done(0)
+        ,   vsuccess(0)
+        ,   vtotal(0)
+        ,   tsuccess(0)
+        ,   ttotal(0)
+        {}
+    };
+
+    std::deque<vinfo_t> VDB; // verbs database
+    stat_t VTR; // verbs tests results
+
+    void print_stat()
+    {
+        using std::cout;
+        using std::endl;
+
+        cout << "Number of tests = " << VTR.done;
+
+        if (VTR.vtotal)
+            cout << "; v-rate = " << 100. * VTR.vsuccess / VTR.vtotal << "%";
+
+        if (VTR.ttotal)
+            cout << "; t-rate = " << 100. * VTR.tsuccess / VTR.ttotal << "%";
+
+        cout << endl;
+   }
+
+    void print_ft()
+    {
+        using std::cout;
+        using std::endl;
+
+        if (!VTR.ft.empty())
+        {
+            cout << "Number of failed tests: " << VTR.ft.size() << endl;
+
+            for (auto & index: VTR.ft)
+            {
+                const vinfo_t & vinfo = VDB[index];
+                cout << "  " << vinfo.v1;
+                cout << " [";
+                for (auto & word: vinfo.v2)
+                    cout << " " << word;
+                cout << " ] [";
+                for (auto & word: vinfo.v3)
+                    cout << " " << word;
+                cout << " ] " << vinfo.trn << endl;
+            }
+        }
+    }
+
+    void sighandler(int signum)
+    {
+        std::cout << std::endl << std::endl;
+
+        print_stat();
+        print_ft();
+
+        ::exit(signum);
+    }
+
+    /* Generate test queue (result contains shuffled numbers from 0 to VDB.size-1) */
+
+    std::deque<size_t> gen_tq()
+    {
+        std::deque<size_t> tq(VDB.size());
+        std::iota(tq.begin(), tq.end(), 0);
+        std::shuffle(tq.begin(), tq.end(), std::mt19937(std::random_device{}()));
+        return tq; // RVO
+    }
+
+} // namespace
 
 int main(int argc, char ** argv)
 {
@@ -77,62 +160,64 @@ int main(int argc, char ** argv)
         if (argc != 2)
             throw std::invalid_argument("Expected single argument (database)");
 
+        ::signal(SIGINT, sighandler);
+
         // TODO auto db = load(argv[1]);
 
         std::fstream file(argv[1]);
         if (!file.is_open())
             throw std::runtime_error("File access error");
 
-        std::deque<vinfo_t> varr;
         size_t fline = 1;
 
         for (std::string line; std::getline(file, line); ++fline)
-            varr.push_back(get_vinfo(fline, line));
+            VDB.push_back(get_vinfo(fline, line));
 
-        if (varr.empty())
+        if (VDB.empty())
             throw std::runtime_error("Empty database");
 
         // main loop
 
         std::random_device rdev;
-        std::mt19937 rengine(rdev());
-        std::uniform_int_distribution<size_t> rdis(0, varr.size()-1);
-
-        std::shuffle(varr.begin(), varr.end(), rengine);
-
-        size_t vtotal = 0, vsuccess = 0, ttotal = 0, tsuccess = 0; // verbs/translation total/success
+        //std::mt19937 rengine(rdev());
+        std::uniform_int_distribution<size_t> rdis(0, VDB.size()-1);
 
         // TODO save fauilts, show them at the end
 
-        for (size_t i = 0, ilim = varr.size(); i < ilim; ++i)
+        std::deque<size_t> tq = gen_tq();
+
+        while (!tq.empty())
         {
             using std::cout;
             using std::cin;
             using std::endl;
 
-            //const vinfo_t vinfo = varr[rdis(rdev)];
-            const vinfo_t vinfo = varr[i];
+            const size_t vindex = tq.front();
+            tq.pop_front();
 
-            cout << "Test " << (i + 1) << "/" << ilim << endl;
+            const vinfo_t vinfo = VDB[vindex];
+
+            cout << "Test " << (VTR.done + 1) << "/" << VDB.size() << endl;
             cout << endl;
-            cout << "v1: " << vinfo.v1 << endl;
-            cout << "v2: ";
 
+            cout << "Suggest V2/V3 forms:" << endl;
+            cout << "  V1: " << vinfo.v1 << endl;
+            cout << "  V2: ";
             std::string v2;
             std::getline(cin, v2);
 
-            cout << "v3: ";
+            cout << "  V3: ";
             std::string v3;
             std::getline(cin, v3);
 
             auto [ csuccess, ctotal ] = check_answer(vinfo, v2, v3);
 
-            if (csuccess == ctotal)
-                cout << "success" << endl;
-            else
+            if (csuccess != ctotal)
             {
+                VTR.ft.insert(vindex);
+
                 // TODO divide failed from partial faile [ wrong / partial wrong ]
-                cout << "failed ("
+                cout << endl << "  You are wrong ("
                     << csuccess << "/" << ctotal
                     << "): v2 = [";
                 for (auto & v2: vinfo.v2)
@@ -141,28 +226,30 @@ int main(int argc, char ** argv)
                 for (auto & v3: vinfo.v3)
                     cout << " " << v3;
                 cout << " ]" << endl;
+
+                std::getchar();
             }
 
-            vtotal += ctotal;
-            vsuccess += csuccess;
+            VTR.vtotal += ctotal;
+            VTR.vsuccess += csuccess;
 
             // translation
 
             std::set<std::string> trn = { vinfo.trn };
             while (trn.size() != 5)
-                trn.insert(varr[rdis(rdev)].trn);
+                trn.insert(VDB[rdis(rdev)].trn);
 
             cout << endl;
-            
+
+            cout << "Choose right translation:" << endl;
             size_t j = 1;
             for (auto & aux: trn)
-                cout << j++ << ". " << aux << endl;
+                cout << "  " << j++ << ". " << aux << endl;
 
             std::optional<size_t> index;
 
             while (!index)
             {
-                cout << "Choose right translation: ";
                 std::string aux;
                 getline(cin, aux);
                 if (std::all_of(aux.begin(), aux.end(), [](auto symbol) { return isdigit(symbol) != 0; })) {
@@ -175,30 +262,31 @@ int main(int argc, char ** argv)
             auto it = trn.begin();
             advance(it, *index - 1);
 
-            if (*it != vinfo.trn)
-                cout << "failed (" << vinfo.trn << ")" << endl;
-            else
-            {
-                cout << "success" << endl;
-                ++tsuccess;
+            if (*it == vinfo.trn) {
+                ++VTR.tsuccess;
+            } else {
+                VTR.ft.insert(vindex);
+
+                cout << endl << "  You are wrong (" << vinfo.trn << ")" << endl;
+                std::getchar();
             }
 
-            ++ttotal;
+            ++VTR.ttotal;
 
             cout << endl;
 
+            ++VTR.done;
+
             // update statistics
 
-            if (((i + 1) % 10) == 0)
-            {
-                cout << "Number of tests = " << (i+1) << "; v-rate = "
-                    << 100. * vsuccess / vtotal << "%; t-rate ="
-                    << 100. * tsuccess / ttotal << "%"
-                    << endl;
+            if ((VTR.done % 10) == 0) {
+                print_stat();
                 cout << endl;
             }
         }
 
+        print_stat();
+        print_ft();
     }
     catch (const std::exception & ex)
     {
