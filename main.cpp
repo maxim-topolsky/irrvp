@@ -20,15 +20,18 @@
 
 namespace
 {
+    /* Verbs info database types and (loading) functions */
+
     typedef struct
-    {   std::string v1;
-        std::set<std::string> v2, v3;
-        std::string trn;
+    {   std::string v1, trn;            // base form, translation
+        std::set<std::string> v2, v3;   // V2/V3 forms
     } vinfo_t;
 
-    // TODO db_t load(..)
+    typedef std::deque<vinfo_t> vdb_t;
 
-    vinfo_t get_vinfo(size_t fline, const std::string &);
+    vdb_t   load_vdb(const char * filename);
+
+    vinfo_t get_vinfo(const std::string &);
 
     /* Checks the answer. Result consist of two numbers:
      * - first: number of matched answers
@@ -162,19 +165,7 @@ int main(int argc, char ** argv)
 
         ::signal(SIGINT, sighandler);
 
-        // TODO auto db = load(argv[1]);
-
-        std::fstream file(argv[1]);
-        if (!file.is_open())
-            throw std::runtime_error("File access error");
-
-        size_t fline = 1;
-
-        for (std::string line; std::getline(file, line); ++fline)
-            VDB.push_back(get_vinfo(fline, line));
-
-        if (VDB.empty())
-            throw std::runtime_error("Empty database");
+        VDB = load_vdb(argv[1]);
 
         // main loop
 
@@ -299,111 +290,121 @@ int main(int argc, char ** argv)
 
 namespace
 {
-    vinfo_t get_vinfo(size_t fline, const std::string & line)
+    vdb_t load_vdb(const char * filename)
     {
+        if (!filename)
+            throw std::invalid_argument("Invalid file name");
+
+        std::fstream file(filename);
+
+        if (!file.is_open())
+            throw std::runtime_error("File access error");
+
+        vdb_t vdb;
+        size_t nline = 1;
+
         try
         {
-            auto check_verb = [](char symbol) {
-                return std::isalpha(symbol) && std::islower(symbol);
-            };
-
-            vinfo_t vinfo;
-
-            std::stringstream ss(line);
-
-            // v1
-
-            ss >> vinfo.v1;
-
-            if (vinfo.v1.empty())
-                throw std::runtime_error("No V1 is available");
-
-            if (!std::all_of(vinfo.v1.begin(), vinfo.v1.end(), check_verb))
-                throw std::runtime_error("Invalid V1");
-
-            // v2
-
-            std::string vx;
-            ss >> vx;
-
-            if (vx.empty())
-                throw std::runtime_error("No V2 is available");
-
-            std::istringstream v2ss(vx);
-            for (std::string v2; std::getline(v2ss, v2, '/'); )
-            {
-                if (v2 == "[1]")
-                    vinfo.v2.insert(vinfo.v1);
-                else
-                {
-                    if (!std::all_of(v2.begin(), v2.end(), check_verb))
-                        throw std::runtime_error("Invalid V2");
-
-                    vinfo.v2.insert(v2);
-                }
-            }
-
-            // v3
-
-            ss >> vx;
-
-            if (vx.empty())
-                throw std::runtime_error("No V3 is available");
-
-            std::istringstream v3ss(vx);
-            for (std::string v3; std::getline(v3ss, v3, '/'); )
-            {
-                if (v3 == "[1]")
-                    vinfo.v3.insert(vinfo.v1);
-                else
-                if (v3 == "[2]")
-                    for (auto & v2: vinfo.v2)
-                        vinfo.v3.insert(v2);
-                else
-                {
-                    if (!std::all_of(v3.begin(), v3.end(), check_verb))
-                        throw std::runtime_error("Invalid V3");
-
-                    vinfo.v3.insert(v3);
-                }
-            }
-
-            // translation
-
-            std::string trn;
-            while (!ss.eof())
-            {
-                ss >> trn;
-
-                if (!vinfo.trn.empty())
-                    vinfo.trn += ' ';
-
-                vinfo.trn += trn;
-            }
-
-            /*
-            using namespace std;
-            cout << "v1 = " << vinfo.v1 << "; v2 = [";
-            for (auto & v2: vinfo.v2)
-                cout << " " << v2;
-            cout << " ]; v3 = [";
-            for (auto & v3: vinfo.v3)
-                cout << " " << v3;
-            cout << " ]" << endl;
-            cout << "trn = " << vinfo.trn << endl;
-            */
-
-            return vinfo;
+            for (std::string line; std::getline(file, line); ++nline)
+                vdb.push_back(get_vinfo(line));
         }
         catch (const std::exception & ex)
         {
             throw std::invalid_argument (
                     std::string("Database error (line ") +
-                    std::to_string(fline) +
+                    std::to_string(nline) +
                     std::string("): ") +
                     std::string(ex.what())
                 );
         }
+
+        if (vdb.empty())
+            throw std::runtime_error("Empty database");
+
+        return vdb; // RVO
+    }
+
+    vinfo_t get_vinfo(const std::string & line)
+    {
+        auto check_verb = [](char symbol) {
+            return std::isalpha(symbol) && std::islower(symbol);
+        };
+
+        vinfo_t vinfo;
+
+        std::stringstream ss(line);
+
+        // v1
+
+        ss >> vinfo.v1;
+
+        if (vinfo.v1.empty())
+            throw std::runtime_error("No V1 is available");
+
+        if (!std::all_of(vinfo.v1.begin(), vinfo.v1.end(), check_verb))
+            throw std::runtime_error("Invalid V1");
+
+        // v2
+
+        std::string vx;
+        ss >> vx;
+
+        if (vx.empty())
+            throw std::runtime_error("No V2 is available");
+
+        std::istringstream v2ss(vx);
+        for (std::string v2; std::getline(v2ss, v2, '/'); )
+        {
+            if (v2 == "[1]")
+                vinfo.v2.insert(vinfo.v1);
+            else
+            {
+                if (!std::all_of(v2.begin(), v2.end(), check_verb))
+                    throw std::runtime_error("Invalid V2");
+
+                vinfo.v2.insert(v2);
+            }
+        }
+
+        // v3
+
+        ss >> vx;
+
+        if (vx.empty())
+            throw std::runtime_error("No V3 is available");
+
+        std::istringstream v3ss(vx);
+        for (std::string v3; std::getline(v3ss, v3, '/'); )
+        {
+            if (v3 == "[1]")
+                vinfo.v3.insert(vinfo.v1);
+            else
+            if (v3 == "[2]")
+                for (auto & v2: vinfo.v2)
+                    vinfo.v3.insert(v2);
+            else
+            {
+                if (!std::all_of(v3.begin(), v3.end(), check_verb))
+                    throw std::runtime_error("Invalid V3");
+
+                vinfo.v3.insert(v3);
+            }
+        }
+
+        // translation
+
+        std::string trn;
+        while (!ss.eof())
+        {
+            ss >> trn;
+
+            if (!vinfo.trn.empty())
+                vinfo.trn += ' ';
+
+            vinfo.trn += trn;
+        }
+
+        return vinfo;
     }
 
     std::pair<size_t, size_t> check_answer
